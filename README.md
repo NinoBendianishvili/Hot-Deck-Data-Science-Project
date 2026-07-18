@@ -1,4 +1,4 @@
-# Bitmap-Group-Aware Hot Deck Data Fusion
+# Hot Deck Implementation Project
 
 ## Overview
 
@@ -10,15 +10,8 @@ Donor similarity is target-specific. Raw mutual information estimates how releva
 
 The implementation covers the requested preprocessing, feature engineering, reproducible donor splitting, Hot Deck fusion, evaluation, pipeline integration, independent module execution, configuration, testing, and documentation requirements.
 
-## Dataset
+The final target-weighted Hot Deck model selected k=11 through five-fold cross-validation. It achieved approximately 77% cell accuracy and 60% mean target macro F1, compared with approximately 73% accuracy and 39% macro F1 for the majority baseline.
 
-| File | Shape | Role |
-|---|---:|---|
-| `datasets/train_predictors.csv` | 1,015 × 1,097 | Predictors for labeled donor records |
-| `datasets/train_targets.csv` | 1,015 × 191 | Observed categorical targets for donor records |
-| `datasets/test_predictors.csv` | 660 × 1,097 | Predictors for final recipient records |
-
-The training target matrix contains 189 nonconstant targets and 2 constant targets. The pipeline detects these properties from the data rather than relying on hard-coded target names.
 
 ## Assignment requirements and implementation
 
@@ -54,19 +47,17 @@ The training target matrix contains 189 nonconstant targets and 2 constant targe
 15. Restore constant targets and the original 191-column order.
 16. Save predictions, learned weights, evaluation tables, bitmap structure and pipeline metadata.
 
-## Why bitmap grouping is necessary
+## Why bitmap grouping helped
 
 The training predictor matrix contains 26 consecutive exact one-hot blocks with the following discovered sizes:
 
 ```text
-1015, 2, 10, 2, 2, 5, 1, 6, 4,
-2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-11, 2, 7, 4
+1015, 2, 10, 2, 2, 5, 1, 6, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 11, 2, 7, 4
 ```
 
 These boundaries are inferred from the training data; they are not encoded as fixed column ranges in the source code.
 
-If raw bitmap cells were compared independently, a mismatch in an eleven-category variable could affect distance differently from a mismatch in a two-category variable. Decoding each group makes one original categorical variable contribute at most one mismatch. It also allows missing or unseen categories to be represented without constructing an invalid one-hot pattern.
+Decoding valid one-hot bitmap groups does not change donor rankings under unweighted Hamming distance, because two different categories always differ in exactly two bitmap cells. The groups were decoded to enable meaningful group-level weighting. Raw mutual information was then used to assign target-specific relevance weights to the decoded groups, allowing the distance calculation to emphasize predictors that are more informative for each target. This weighted approach significantly improved both macro F1 and cell accuracy compared with the unweighted model.
 
 ### Structural filtering
 
@@ -83,10 +74,7 @@ After filtering, 23 decoded categorical predictor groups remain.
 
 The assignment requests missing-value handling, outlier treatment and scaling where appropriate. These operations are adapted to the actual data representation:
 
-- Missing and non-finite bitmap cells are converted to zero before group decoding.
 - An all-zero retained group is decoded to `FEATURES.unknown_category_value`, which defaults to `-1`.
-- Non-binary finite predictor values are rejected because they violate the bitmap schema.
-- Multiple active bits inside a one-hot group are rejected rather than silently repaired.
 - Conventional numeric outlier clipping is not applied: valid predictor cells can only be zero or one, so any other finite value is a schema error rather than a statistical outlier.
 - Standardization and normalization are not applied to decoded categories because their integer codes are labels, not ordered numeric magnitudes.
 
@@ -197,18 +185,7 @@ Macro F1 is the primary selection metric because it gives minority classes meani
 
 These are combined out-of-fold estimates over the 1,015 labeled rows, not scores on the hidden final test targets. The fold tables and per-target reports should be used alongside the headline averages when assessing stability and difficult target columns.
 
-## Leakage prevention and reproducibility
-
-- All paths and random settings are centralized in `src/config.py`.
-- Donor splits use a fixed random state.
-- Bitmap structure is inferred from training predictors rather than final test targets.
-- Target relevance is refitted inside each fold using donor rows only.
-- Majority values are fitted independently from donor targets in each fold.
-- Recipient target values are used only after prediction to calculate metrics.
-- The global neighbor count is selected from combined out-of-fold predictions.
-- The final model is fitted only after selection and uses all available labeled rows.
-- Stable sorting and deterministic tie handling make repeated runs reproducible.
-- Constant targets and their values are detected from the training targets instead of being hard-coded.
+The selected k=11 model achieved approximately 77% cell accuracy and 60% macro F1, compared with 73% and 39% for the majority baseline. The larger improvement in macro F1 shows that the model predicts minority classes better instead of only favoring common values. Binary targets performed best, with about 80% accuracy and 65% macro F1. Four- and five-class targets were more difficult, reaching only about 51% accuracy and 35% and 30% macro F1, respectively. This is likely because the available donor records are divided across more classes, leaving fewer examples for rare values. With eleven-neighbor majority voting, frequent classes can also outvote a correct but rare nearby donor. Three-class targets achieved high accuracy but low macro F1, which suggests strong class imbalance. Future improvements could therefore include better distance weighting, distance-weighted voting, or selecting a suitable neighbor count separately for each target.
 
 ## Evaluation versus final prediction
 
@@ -235,8 +212,7 @@ All changeable paths and parameters are defined in `src/config.py`.
 ### Important modeling settings
 
 | Setting | Current value | Meaning |
-|---|---:|---|
-| `PREPROCESSING.imputation_strategy` | `unknown_category` | Preserves missing bitmap groups for unknown-category decoding |
+|---|---|---|
 | `FEATURES.drop_identity_groups` | `True` | Removes row-identity bitmaps |
 | `FEATURES.drop_constant_groups` | `True` | Removes groups with no variation |
 | `FEATURES.drop_derived_groups` | `True` | Removes redundant exact parent groups |
@@ -321,45 +297,18 @@ The `if __name__ == "__main__"` entry point in each module provides a focused di
 
 ## Output files
 
-| File | Created by | Contents |
-|---|---|---|
-| `outputs/bitmap_group_structure.csv` | Evaluation and pipeline | Discovered bitmap boundaries, decoded names and retention status |
-| `outputs/neighbor_selection.csv` | Evaluation and pipeline | Metrics, F1 differences, tolerance eligibility and selection status for every candidate k |
-| `outputs/bitmap_model_comparison.csv` | Evaluation and pipeline | Headline out-of-fold comparison of the selected official model and majority baseline |
-| `outputs/five_fold_metrics.csv` | Evaluation and pipeline | Fold-level metrics for the selected model and majority baseline |
-| `outputs/best_bitmap_per_target_metrics.csv` | Evaluation and pipeline | Out-of-fold accuracy, precision, recall and F1 for each modeled target |
-| `outputs/best_bitmap_performance_by_class_count.csv` | Evaluation and pipeline | Per-target metrics aggregated by the number of observed classes in each target |
-| `outputs/target_group_weights.csv` | Pipeline | Full-data raw-MI weight matrix for 189 targets × 23 decoded groups |
-| `outputs/pipeline_metadata.json` | Pipeline | Selected k, configuration, data dimensions and structural counts for the final run |
-| `outputs/test_target_predictions.csv` | Pipeline | Final 660 × 191 target prediction matrix |
+| File | Contents |
+|---|---|
+| `outputs/bitmap_group_structure.csv` |  Discovered bitmap boundaries, decoded names and retention status |
+| `outputs/neighbor_selection.csv` | Metrics, F1 differences, tolerance eligibility and selection status for every candidate k |
+| `outputs/model_comparison.csv` | Headline out-of-fold comparison of the selected official model and majority baseline |
+| `outputs/five_fold_metrics.csv` | Fold-level metrics for the selected model and majority baseline |
+| `outputs/per_target_metrics.csv` | Out-of-fold accuracy, precision, recall and F1 for each modeled target |
+| `outputs/performance_by_class_count.csv` | Per-target metrics aggregated by the number of observed classes in each target |
+| `outputs/target_group_weights.csv` | Full-data raw-MI weight matrix for 189 targets × 23 decoded groups |
+| `outputs/pipeline_metadata.json` | Selected k, configuration, data dimensions and structural counts for the final run |
+| `outputs/test_target_predictions.csv` | Final 660 × 191 target prediction matrix |
 
-The term `bitmap` in output filenames refers to the original one-hot encoded predictor groups. For example, `best_bitmap_per_target_metrics.csv` contains one metric row per target for the selected bitmap-group-aware model; it does not contain bitmap-level metrics.
-
-## Project structure
-
-```text
-project/
-├── datasets/
-│   ├── train_predictors.csv
-│   ├── train_targets.csv
-│   └── test_predictors.csv
-├── outputs/
-├── src/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── preprocessing.py
-│   ├── feature_engineering.py
-│   ├── target_analysis.py
-│   ├── donor_split.py
-│   ├── relevance.py
-│   ├── hotdeck.py
-│   ├── evaluation.py
-│   └── pipeline.py
-├── tests/
-├── requirements.txt
-├── README.md
-└── .gitignore
-```
 
 ## Testing
 
@@ -369,9 +318,8 @@ Run the complete test suite with:
 python -m pytest -q
 ```
 
-The suite contains 39 tests covering:
+The suite contains 33 tests covering:
 
-- central configuration and component construction;
 - missing-value handling and column consistency;
 - bitmap discovery, decoding and structural filtering;
 - invalid non-binary or multi-active bitmap detection;
@@ -406,19 +354,8 @@ The project was organized as a focused four-day first-week delivery. Each day en
 
 ### Milestones after the first delivery
 
-If more time were available, the next milestones would be profiling and optimizing distance computation for larger donor pools, adding repeated or nested cross-validation for a more conservative model-selection estimate, testing robustness under category drift, and integrating automated linting and continuous test execution. These are extensions rather than requirements for reproducing the submitted model.
+Future development could explore more sophisticated methods for weighting predictor groups in the donor-distance calculation, beyond raw mutual information, to better represent nonlinear relationships and interactions between predictors and targets. The voting stage could also be extended with distance-weighted voting, giving closer donors more influence than donors near the edge of the selected neighborhood. Finally, the current single global neighbor count could be made target-specific, allowing each target to select its own optimal value of k based on cross-validation while applying suitable regularization or selection constraints to avoid overfitting.
 
-## Design decisions and experiment progression
-
-The implementation progressed from a conventional Hot Deck interpretation toward a representation-aware method:
-
-1. A standard donor-based classifier established the required data flow and baseline behavior.
-2. Data inspection revealed that the apparent binary columns form categorical bitmap groups.
-3. Group decoding removed the artificial influence of bitmap width and exposed identity, constant and redundant structures.
-4. Equal treatment of all retained groups was refined to target-specific raw-MI weighting so donor similarity reflects the target being predicted.
-5. Voting remained unweighted to keep the transferred value interpretable as the local donor mode; only donor selection uses learned weights.
-6. Five-fold out-of-fold evaluation replaced reliance on one split and selected one global k that can adapt when labeled data changes.
-7. The final report was intentionally limited to the official model and a simple majority baseline. Diagnostic tables retain detailed evidence without presenting unused variants as production alternatives.
 
 ## Error handling and validation
 
@@ -435,8 +372,6 @@ The package raises clear errors for conditions that would otherwise produce misl
 - impossible fold counts or neighbor counts;
 - missing, negative or non-finite relevance weights;
 - prediction columns or indices that do not align with the expected targets.
-
-Validation focuses on realistic failure points rather than silently modifying malformed categorical data.
 
 ## Removed unused and experimental code
 
