@@ -144,15 +144,33 @@ class WeightedHotDeckImputer:
 
             for target_position, target in enumerate(self.target_columns_):
                 target_distances = distances[:, :, target_position]
+                target_values = self.donor_targets_[target]
+
+                # If every donor has the same distance, the recipient provides no
+                # useful information for selecting neighbours. Using the first k
+                # donors would make the prediction depend on CSV row order.
+                no_distance_information = np.all(
+                    target_distances == target_distances[:, [0]],
+                    axis=1,
+                )
+
+                majority_modes = target_values.mode(dropna=False)
+                fallback_value = stable_smallest(majority_modes.tolist())
+
                 nearest = np.argsort(
                     target_distances,
                     axis=1,
                     kind="stable",
                 )[:, : counts[-1]]
-                target_values = self.donor_targets_[target]
 
                 for local_row, donor_positions in enumerate(nearest):
                     output_row = chunk_start + local_row
+
+                    if no_distance_information[local_row]:
+                        for k in counts:
+                            outputs[k][output_row, target_position] = fallback_value
+                        continue
+
                     ordered_values = target_values.iloc[donor_positions]
                     for k in counts:
                         outputs[k][output_row, target_position] = self._vote(

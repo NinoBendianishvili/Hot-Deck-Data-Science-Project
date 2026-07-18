@@ -130,6 +130,8 @@ The indicator is zero when the decoded group values match and one when they diff
 
 The model uses stable ordering when distances tie. This makes donor selection reproducible and allows the ordered donor list calculated for the largest candidate value to be reused for every smaller candidate value.
 
+If every donor has the same distance for a recipient, the predictors provide no useful information for donor selection. In this case, the model uses the donor majority value for that target instead of selecting donors according to arbitrary row order.
+
 ## Unweighted voting
 
 The word *weighted* describes the distance used to choose donors, not the final vote. Once the nearest $k$ donors for a target are selected, every donor receives one equal vote. The predicted target value is the mode of their observed values.
@@ -220,7 +222,7 @@ All changeable paths and parameters are defined in `src/config.py`.
 | `FEATURES.unknown_category_value` | `-1` | Code used for all-zero or unavailable groups |
 | `TARGETS.remove_constant_targets` | `True` | Excludes constant targets while modeling and restores them afterward |
 | `RELEVANCE.weight_floor` | `1e-6` | Minimum positive relevance used before normalization |
-| `MODEL.n_neighbors` | `7` | Default for standalone Hot Deck construction; the integrated pipeline uses the cross-validated selected value |
+| `MODEL.n_neighbors` | `11` | Default for standalone Hot Deck construction; the integrated pipeline uses the cross-validated selected value |
 | `MODEL.neighbor_candidates` | `(5, 7, 9, 11, 13, 15)` | Global values evaluated by cross-validation |
 | `MODEL.voting` | `unweighted` | Gives each selected donor one vote |
 | `MODEL.chunk_size` | `16` | Number of recipient rows processed together during distance calculation |
