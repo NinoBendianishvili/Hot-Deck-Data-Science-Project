@@ -1,0 +1,27 @@
+{
+  "n_neighbors": 11,
+  "neighbor_candidates": [
+    5,
+    7,
+    9,
+    11,
+    13,
+    15
+  ],
+  "neighbor_selection_folds": 5,
+  "neighbor_selection_primary_metric": "mean_target_f1_macro",
+  "neighbor_selection_secondary_metric": "cell_accuracy",
+  "neighbor_selection_f1_tolerance": 0.001,
+  "neighbor_selection_final_tie_breaker": "smallest_k",
+  "distance": "target-specific weighted categorical Hamming",
+  "group_weighting": "raw mutual information",
+  "voting": "unweighted",
+  "raw_predictor_columns": 1097,
+  "decoded_predictor_groups": 23,
+  "training_rows": 1015,
+  "test_rows": 660,
+  "modeling_targets": 189,
+  "constant_targets_restored": 2,
+  "test_unknown_category_cells": 646,
+  "output_file": "outputs/test_target_predictions.csv"
+}
